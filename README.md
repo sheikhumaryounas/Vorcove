@@ -306,7 +306,30 @@ Some colours also have an `-rgb` version (e.g. `--ink-rgb`), which transparent o
 
 ## Deployment
 
-In production, **one Node process serves both the website and the API**.
+### Vercel (recommended)
+
+The repo includes a `vercel.json` that deploys two [Vercel Services](https://vercel.com/docs/services) (beta) as one project:
+
+| Service | Folder | Public path |
+| --- | --- | --- |
+| `client` | `client/` (Vite) | `/` |
+| `server` | `server/` (Express, runs as a Vercel Function) | `/api/*` |
+
+1. Create a free cluster on [MongoDB Atlas](https://www.mongodb.com/atlas).
+   - Under **Network Access**, allow `0.0.0.0/0`, because Vercel functions have no fixed IP.
+   - Copy the connection string.
+2. On [vercel.com/new](https://vercel.com/new), import this repository. Vercel reads `vercel.json` automatically.
+3. Under **Settings → Environment Variables**, add:
+   - `MONGODB_URI`: your Atlas connection string (required)
+   - `ADMIN_TOKEN`: a long random string, needed only to read enquiries
+4. Deploy. The site is served at `/` and the API at `/api/*`, on the same domain.
+
+> [!NOTE]
+> On Vercel the in-memory database is turned off, so `MONGODB_URI` must be set or the contact form returns an error.
+
+### Any Node host
+
+On a single Node host, **one Node process serves both the website and the API**.
 
 1. **Database:** create a free cluster on [MongoDB Atlas](https://www.mongodb.com/atlas) and copy its connection string.
 2. **Host:** use any platform that runs a long-lived Node server, such as [Render](https://render.com), [Railway](https://railway.app), [Fly.io](https://fly.io) or a VPS.

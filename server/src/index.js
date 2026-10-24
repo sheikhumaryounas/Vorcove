@@ -27,13 +27,17 @@ app.use(helmet({
 }));
 app.use(express.json({ limit: '20kb' }));
 
-app.get('/api/health', (req, res) => {
+// every API request waits for the (cached) database connection
+const withDb = (req, res, next) => connectDb().then(() => next(), next);
+
+app.get('/api/health', async (req, res) => {
+  try { await connectDb(); } catch { /* reported below */ }
   res.json({ ok: true, db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
-app.use('/api/leads', leadsRouter);
+app.use('/api/leads', withDb, leadsRouter);
 app.use('/api', (req, res) => res.status(404).json({ ok: false, error: 'Not found' }));
 
-// in production the API also serves the built React site
+// on a single Node host the API also serves the built React site (on Vercel the client is its own service)
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist, { maxAge: '7d', index: false }));
   app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
@@ -44,20 +48,25 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: 'Something went wrong. Please try again.' });
 });
 
-connectDb()
-  .then(() => {
-    const server = app.listen(PORT, () => console.log(`Vorcove API on http://localhost:${PORT}`));
-    server.on('error', err => {
-      if (err.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use. Close the other server using it, or set a different PORT in server/.env.`);
-      } else console.error(err);
-      disconnectDb().finally(() => process.exit(1));
+// Vercel runs the exported app as a function; everywhere else we start a normal server
+if (!process.env.VERCEL) {
+  connectDb()
+    .then(() => {
+      const server = app.listen(PORT, () => console.log(`Vorcove API on http://localhost:${PORT}`));
+      server.on('error', err => {
+        if (err.code === 'EADDRINUSE') {
+          console.error(`Port ${PORT} is already in use. Close the other server using it, or set a different PORT in server/.env.`);
+        } else console.error(err);
+        disconnectDb().finally(() => process.exit(1));
+      });
+      const stop = () => server.close(() => disconnectDb().finally(() => process.exit(0)));
+      process.on('SIGINT', stop);
+      process.on('SIGTERM', stop);
+    })
+    .catch(err => {
+      console.error('Could not start:', err.message);
+      process.exit(1);
     });
-    const stop = () => server.close(() => disconnectDb().finally(() => process.exit(0)));
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
-  })
-  .catch(err => {
-    console.error('Could not start:', err.message);
-    process.exit(1);
-  });
+}
+
+export default app;
